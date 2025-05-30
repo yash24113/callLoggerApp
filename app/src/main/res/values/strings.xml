@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Calll</string>
+    <string name="app_logo">Amrita Globle Enterprise</string>
+
+    <string name="call_icon">Call Icon</string>
+
+    <string-array name="call_status_filter">
+        <item>All</item>
+        <item>Incoming</item>
+        <item>Outgoing</item>
+        <item>Missed</item>
+        <item>Rejected</item>
+        <item>Not Answered</item>
+    </string-array>
+</resources>
