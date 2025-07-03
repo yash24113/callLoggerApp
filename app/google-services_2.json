@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "219177215760",
-    "project_id": "age-call-logger",
-    "storage_bucket": "age-call-logger.firebasestorage.app"
+    "project_number": "853754974782",
+    "project_id": "calllogger-505f9",
+    "storage_bucket": "calllogger-505f9.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:219177215760:android:da56ff9531118199152795",
+        "mobilesdk_app_id": "1:853754974782:android:39b16c4fe6a07b1de4b76f",
         "android_client_info": {
           "package_name": "com.example.calll"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyB5hY4WqtX1j_MhpqEfS9_mBmiUhBkPgw4"
+          "current_key": "AIzaSyCVhXr1XHQqJI3_Gya6H6Ig7E1f-XNNm14"
         }
       ],
       "services": {

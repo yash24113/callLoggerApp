@@ -7,5 +7,7 @@ data class CallLogEntry(
     val callStatus: String,
     val date: String,
     val time: String,
-    val serverStatus: String
+    val serverStatus: String,
+    val simSerialNumber: String?,
+    val carrierName: String?
 )

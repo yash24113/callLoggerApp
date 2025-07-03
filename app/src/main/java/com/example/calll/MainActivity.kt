@@ -1,6 +1,5 @@
 package com.example.calll
 
-import ApiService
 import android.Manifest
 import android.app.DatePickerDialog
 import android.content.*
@@ -23,10 +22,11 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import retrofit2.*
-import retrofit2.converter.gson.GsonConverterFactory
 import java.text.SimpleDateFormat
 import java.util.*
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,18 +35,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spinner: Spinner
     private lateinit var datePickerButton: Button
     private lateinit var refreshButton: AppCompatImageButton
-    private lateinit var apiService: ApiService
     private lateinit var adapter: CallLogAdapter
     private lateinit var firestore: FirebaseFirestore
 
     private val callLogs = mutableListOf<CallLogEntry>()
     private val filteredCallLogs = mutableListOf<CallLogEntry>()
-
     private var selectedDate: String = ""
     private val PERMISSION_REQUEST_CODE = 101
     private val PREFS_NAME = "CallLogPrefs"
     private val gson = Gson()
     private lateinit var uniqueCollectionId: String
+    private val REQUIRED_PERMISSIONS = arrayOf(
+        Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.READ_PHONE_STATE
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,7 +81,6 @@ class MainActivity : AppCompatActivity() {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 filterCallLogs(spinner.selectedItem.toString(), selectedDate)
             }
-
             override fun onNothingSelected(parent: AdapterView<*>) {
                 filterCallLogs("All", selectedDate)
             }
@@ -87,12 +88,6 @@ class MainActivity : AppCompatActivity() {
 
         datePickerButton.setOnClickListener { showDatePicker() }
         refreshButton.setOnClickListener { fetchCallLogsFromDevice() }
-
-        val retrofit = Retrofit.Builder()
-            .baseUrl("http://192.168.19.183:3306/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-        apiService = retrofit.create(ApiService::class.java)
 
         val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         selectedDate = formatter.format(Calendar.getInstance().time)
@@ -118,13 +113,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG)
-            != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CALL_LOG)) {
-                showPermissionRationaleDialog()
-            } else {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CALL_LOG), PERMISSION_REQUEST_CODE)
-            }
+        val missingPermissions = REQUIRED_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missingPermissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
             fetchCallLogsFromDevice()
         }
@@ -148,6 +141,8 @@ class MainActivity : AppCompatActivity() {
         loader.visibility = View.VISIBLE
         loader.progress = 0
 
+        val (simSerial, carrier) = getSimAndCarrierInfo()
+
         val cursor: Cursor? = contentResolver.query(
             CallLog.Calls.CONTENT_URI,
             null,
@@ -160,7 +155,7 @@ class MainActivity : AppCompatActivity() {
         callLogs.clear()
 
         var count = 0
-        val maxLogs = 500
+        val maxLogs = 50
 
         cursor?.use {
             val numberIndex = it.getColumnIndex(CallLog.Calls.NUMBER)
@@ -186,10 +181,13 @@ class MainActivity : AppCompatActivity() {
                     else -> "Not Answered"
                 }
 
-                val newLog = CallLogEntry(fromNumber, duration, callStatus, date, time, "Pending")
+                val newLog = CallLogEntry(fromNumber, duration, callStatus, date, time, "Pending", simSerial, carrier)
 
                 val existingLog = existingLogs.find {
-                    it.fromNumber == newLog.fromNumber && it.date == newLog.date && it.time == newLog.time && it.duration == newLog.duration
+                    it.fromNumber == newLog.fromNumber &&
+                            it.date == newLog.date &&
+                            it.time == newLog.time &&
+                            it.duration == newLog.duration
                 }
 
                 callLogs.add(existingLog ?: newLog)
@@ -204,7 +202,6 @@ class MainActivity : AppCompatActivity() {
         filterCallLogs(spinner.selectedItem.toString(), selectedDate)
 
         if (isNetworkAvailable()) {
-            sendCallLogsToServer()
             sendCallLogsToFirebase()
         }
     }
@@ -222,7 +219,10 @@ class MainActivity : AppCompatActivity() {
                     callLogs[index] = updatedLog
 
                     val filteredIndex = filteredCallLogs.indexOfFirst {
-                        it.fromNumber == log.fromNumber && it.date == log.date && it.time == log.time && it.duration == log.duration
+                        it.fromNumber == log.fromNumber &&
+                                it.date == log.date &&
+                                it.time == log.time &&
+                                it.duration == log.duration
                     }
                     if (filteredIndex >= 0) {
                         filteredCallLogs[filteredIndex] = updatedLog
@@ -252,35 +252,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         adapter.notifyDataSetChanged()
-    }
-
-    private fun sendCallLogsToServer() {
-        val pendingLogs = callLogs.filter { it.serverStatus == "Pending" }
-        if (pendingLogs.isEmpty()) return
-
-        apiService.sendCallLogs(pendingLogs).enqueue(object : Callback<List<CallLogEntry>> {
-            override fun onResponse(call: Call<List<CallLogEntry>>, response: Response<List<CallLogEntry>>) {
-                if (response.isSuccessful) {
-                    response.body()?.forEach { log ->
-                        val index = callLogs.indexOfFirst {
-                            it.fromNumber == log.fromNumber && it.date == log.date && it.time == log.time
-                        }
-                        if (index >= 0) {
-                            callLogs[index] = log.copy(serverStatus = "Posted")
-                        }
-                    }
-                    saveLogsToPrefs(callLogs)
-                    filterCallLogs(spinner.selectedItem.toString(), selectedDate)
-                    Toast.makeText(this@MainActivity, "Pending logs posted", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this@MainActivity, "Server error: ${response.code()}", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            override fun onFailure(call: Call<List<CallLogEntry>>, t: Throwable) {
-                Toast.makeText(this@MainActivity, "Network error: ${t.localizedMessage}", Toast.LENGTH_LONG).show()
-            }
-        })
     }
 
     private fun isNetworkAvailable(): Boolean {
@@ -314,14 +285,33 @@ class MainActivity : AppCompatActivity() {
         return uuid
     }
 
+    private fun getSimAndCarrierInfo(): Pair<String?, String?> {
+        val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+        var simSerial: String? = null
+        var carrier: String? = null
+        try {
+            val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
+            if (!activeSubscriptionInfoList.isNullOrEmpty()) {
+                val info: SubscriptionInfo = activeSubscriptionInfoList[0]
+                simSerial = info.iccId
+                carrier = info.carrierName?.toString()
+            } else {
+                simSerial = telephonyManager.simSerialNumber
+                carrier = telephonyManager.networkOperatorName
+            }
+        } catch (e: SecurityException) {
+            // Permissions not granted
+        }
+        return Pair(simSerial, carrier)
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                fetchCallLogsFromDevice()
-            } else {
-                Toast.makeText(this, "Permission denied.", Toast.LENGTH_SHORT).show()
-            }
+        if (requestCode == PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            fetchCallLogsFromDevice()
+        } else {
+            Toast.makeText(this, "Permission denied.", Toast.LENGTH_SHORT).show()
         }
     }
 }

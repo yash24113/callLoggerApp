@@ -18,6 +18,8 @@ class CallLogAdapter(private val callLogs: List<CallLogEntry>) :
         val callTime: TextView = view.findViewById(R.id.time)
         val duration: TextView = view.findViewById(R.id.duration)
         val callStatus: TextView = view.findViewById(R.id.server_status)
+        val carrierName: TextView = view.findViewById(R.id.carrier_name)
+        val simSerialNumber: TextView = view.findViewById(R.id.sim_serial_number)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -46,11 +48,11 @@ class CallLogAdapter(private val callLogs: List<CallLogEntry>) :
         holder.callDate.text = "Date: ${log.date}"
         holder.callTime.text = "Time: ${log.time}"
 
-        // Duration: 0 for missed, otherwise show real duration
+        // Duration: 0 for missed, otherwise show formatted duration
         val durationText = if (log.callStatus == "Missed") {
             "Duration: 0 sec"
         } else {
-            "Duration: ${log.duration} sec"
+            "Duration: ${formatDuration(log.duration)}"
         }
         holder.duration.text = durationText
 
@@ -68,6 +70,20 @@ class CallLogAdapter(private val callLogs: List<CallLogEntry>) :
                 holder.callStatus.text = "Server Status: Unknown"
                 holder.callStatus.setTextColor(Color.GRAY)
             }
+        }
+
+        // Show carrier and SIM info
+        holder.carrierName.text = "Carrier: ${log.carrierName ?: "Unknown"}"
+        holder.simSerialNumber.text = "SIM: ${log.simSerialNumber ?: "Unknown"}"
+    }
+
+    private fun formatDuration(seconds: Int): String {
+        val minutes = seconds / 60
+        val secs = seconds % 60
+        return if (minutes > 0) {
+            "${minutes} min ${secs} sec"
+        } else {
+            "${secs} sec"
         }
     }
 
